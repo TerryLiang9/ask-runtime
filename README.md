@@ -179,10 +179,6 @@ Ask:
 
 This demonstrates action parsing, target resolution, preview confirmation, and calendar-style coordination.
 
-![Meeting preview](./images/demo/6.png)
-
-![Meeting result](./images/demo/7.png)
-
 <a id="tech-stack"></a>
 
 ## Tech Stack
