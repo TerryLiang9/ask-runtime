@@ -1,0 +1,72 @@
+Git 常用完整流程
+
+1. 查看当前状态
+git status
+git branch
+
+2. 切到主分支并拉最新
+git checkout main
+git pull origin main
+
+3. 新建功能分支
+git checkout -b test0403
+
+4. 开始修改文件
+修改完成后先检查：
+git status
+
+5. 提交修改
+git add .
+git commit -m "docs: update README"
+
+6. 推送当前分支到 GitHub
+第一次推送：
+git push -u origin test0403
+
+后续继续推送：
+git push
+
+7. 合并到 main
+先回到 main：
+git checkout main
+
+拉取远程最新：
+git pull origin main
+
+合并分支：
+git merge test0403
+
+推送 main：
+git push origin main
+
+8. 删除已经合并的分支
+删除本地分支：
+git branch -d test0403
+
+删除远程分支：
+git push origin --delete test0403
+
+9. 如果只是想把本地提交传到 GitHub
+git push
+
+10. 如果提交时卡住
+原因通常是用了不带 -m 的 git commit，进入了编辑器。
+推荐直接这样提交：
+git commit -m "你的提交说明"
+
+11. 最常用的几条命令
+git status
+git branch
+git checkout 分支名
+git checkout -b 新分支名
+git add .
+git commit -m "说明"
+git push
+git pull origin main
+git merge 分支名
+
+12. 推荐习惯
+不要直接在 main 上改代码，先开分支。
+提交前先看 git status。
+合并前先拉最新的 main。
+除非非常确定，否则不要随便 force push。
