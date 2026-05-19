@@ -10,411 +10,182 @@
 ![Status](https://img.shields.io/badge/Status-Prototype-F59E0B)
 ![Architecture](https://img.shields.io/badge/Architecture-Modular-4F46E5)
 
-`EMATA Runtime` 是一个面向企业内部知识问答与任务协同的 **Ask Runtime** 原型，基于 **FastAPI + Next.js** 构建，将 **Knowledge / Context / Agent / Tool Use** 统一到一套可扩展运行时中。它不是单纯的聊天应用，而是面向 **企业级 RAG、结构化上下文、可控工具执行** 的运行时系统。
+`EMATA Runtime` 是一个面向企业内部知识问答与任务协同的 Ask Runtime 原型。它基于 **FastAPI + Next.js** 构建，把企业级 RAG、结构化上下文、可控工具执行和协同动作预览统一到一套可扩展运行时中。
 
-**核心入口**
+它不是单纯的聊天页面，而是一个围绕企业内工作流设计的运行时系统：
 
-- [`/knowledge`](./frontend/app/knowledge/page.js)：知识运营台，负责文档入库、知识管理与检索链路运营
-- [`/ask`](./frontend/app/ask/page.js)：统一对话入口，负责问答、上下文复用与动作预览执行
+- `/knowledge`：知识运营台，用于文档入库、索引状态查看和知识检索链路运营。
+- `/ask`：统一对话入口，用于问答、上下文复用、动作预览和确认执行。
 
-**快速导航**
+> Public repo note: this repository intentionally excludes local runtime files, `.env`, virtual environments, generated caches, private docs, and temporary data.
 
-- [项目级规格文档](./docs/project-spec.md)
-- [当前规格说明](./docs/superpowers/specs/2026-05-18-ask-runtime-current-spec.md)
-- [云服务器手动部署指南](./docs/deploy-cloud-server.md)
-- [功能特性](#features)
-- [为什么做这个项目](#why)
-- [Demo 场景](#demo)
-- [技术栈](#stack)
-- [本地开发](#dev)
+## Contents
+
+- [Features](#features)
+- [Architecture](#architecture)
+- [Demo Scenarios](#demo-scenarios)
+- [Tech Stack](#tech-stack)
+- [Repository Layout](#repository-layout)
+- [Quick Start](#quick-start)
+- [Environment Variables](#environment-variables)
+- [Testing](#testing)
+- [Security Notes](#security-notes)
+- [Current Limits](#current-limits)
+- [Roadmap](#roadmap)
 
 <a id="features"></a>
 
-## ✨ 功能特性
+## Features
 
-- **企业级 RAG 链路**：覆盖 `search -> rerank -> answer -> citations`，强调可验证、可解释、可引用
-- **结构化上下文管理**：将会话记忆、工作上下文、待确认动作拆层管理，而不是只堆历史消息
-- **可控 Agent 执行**：采用 `preview -> confirm -> execute`，避免高风险动作直接自动落地
-- **知识与动作双入口**：`/knowledge` 负责知识运营，`/ask` 负责统一交互，底层能力共享
-- **企业工具适配层**：已接入 `Milvus`、`MinerU`、`lark-cli` 与 DashScope-compatible 模型 API
-- **模块化可扩展架构**：按 `runtime / skill / tool / knowledge / policy` 分层，便于向多领域扩展
+- **Grounded enterprise RAG**: search, rerank, answer generation, and citations are separated so answers can be traced back to evidence.
+- **Structured context runtime**: conversation memory, working context, and pending action drafts are managed as runtime state instead of being mixed into one long prompt.
+- **Controlled agent execution**: risky enterprise actions follow a `preview -> confirm -> execute` flow.
+- **Knowledge and action surfaces**: `/knowledge` manages knowledge ingestion, while `/ask` coordinates user-facing Q&A and actions.
+- **Provider adapters**: Milvus, MinerU, lark-cli, and DashScope-compatible model APIs are behind integration boundaries.
+- **Modular layering**: runtime, skill, tool, knowledge, and policy concerns are kept separate to make future skills and providers replaceable.
 
----
+<a id="architecture"></a>
 
-<a id="why"></a>
+## Architecture
 
-## 为什么做这个项目
+EMATA Runtime is organized around five layers.
 
-这个项目的重点不在“重新训练一个大模型”，而在于：
+### Runtime
 
-1. 把 **企业级 RAG** 做成可验证、可解释、可引用的链路
-2. 把 **Context 管理** 从“聊天历史堆 prompt”提升成结构化运行时状态
-3. 把 **Agent** 从“黑盒自动调用工具”收成可控的 `preview -> confirm -> execute`
-4. 把 **多技能/多工具/多知识源扩展** 预留成模块边界，而不是写死在单一页面或单一业务里
+The runtime coordinates each Ask turn:
 
-这是一条更贴近企业内部落地的技术路线：
+- intent routing
+- command and turn orchestration
+- context reads and writes
+- knowledge Q&A versus action planning
+- async job state and SSE-style progress updates
 
-- 模型能力来自成熟 API
-- 工程价值体现在 **Runtime、RAG、Context、Tool Orchestration**
-- 面向的是“稳定、可维护、可扩展”的企业内工作流，而不是一次性的 demo
+The goal is to keep the conversation entrypoint independent from any single business domain.
 
----
+### Skill
 
-## 核心架构
+Skills represent domain-specific capabilities. The current prototype includes an HR recruiting skill, while the boundaries are designed to support additional domains such as finance, sales, operations, or internal support.
 
-EMATA Runtime 的设计核心是把系统拆成 5 层：
+### Tool
 
-### 1. Runtime
+Tools adapt external capabilities into controlled interfaces. Skills do not call provider commands directly; they use tool adapters for services such as Milvus, MinerU, lark-cli, and model APIs.
 
-负责统一编排 Ask 会话生命周期。
+### Knowledge
 
-核心职责：
+The knowledge layer handles document upload, parsing, chunking, vector indexing, retrieval traces, and RAG input preparation. It serves both `/knowledge` and `/ask`.
 
-- `Intent Router`
-- `Turn / Command` 协调
-- `Context` 读写
-- `Knowledge QA` 与 `Action` 分流
-- `Job / SSE` 执行状态同步
+### Policy
 
-这一层的目标是：**把对话入口从具体业务中抽离出来**。
+The policy layer defines execution boundaries. Medium-risk and high-risk actions are previewed first and executed only after confirmation.
 
-### 2. Skill
-
-Skill 表示具体领域能力。当前先落地的是：
-
-- `HR Recruiting Skill`
-
-但系统并不是只为 HR 设计。当前架构已经把 Skill 当成独立层，后续可以继续接：
-
-- Finance Skill
-- Sales Skill
-- Ops Coordination Skill
-
-这部分的关键点是：**业务能力是可插拔的，不是写死在 Ask 页面里**。
-
-### 3. Tool
-
-Tool 表示外部能力适配层。当前重点接入：
-
-- `Milvus`
-- `MinerU`
-- `lark-cli`
-- DashScope-compatible model APIs
-
-设计原则是：
-
-- Skill 不直接拼底层命令
-- Tool 只暴露受控能力
-- 外部 provider 可替换
-
-### 4. Knowledge
-
-Knowledge 层负责：
-
-- 文档上传
-- 结构化切块
-- 向量索引
-- 检索 trace
-- RAG 输入准备
-
-这一层同时服务：
-
-- `/knowledge` 管理台
-- `/ask` 问答入口
-
-### 5. Policy
-
-Policy 层负责控制风险和执行边界。
-
-当前最重要的机制是：
-
-- 中高风险动作先预览
-- 用户确认后再执行
-- 不把高风险动作直接交给模型自由执行
-
-这部分是企业 Agent 非常关键的一层。
-
----
-
-## RAG 编排
-
-项目里的 RAG 不是“直接把文档喂给模型”，而是分层编排：
+## RAG Flow
 
 ```text
-User Question
--> Intent Router
--> Knowledge Search
+User question
+-> Intent router
+-> Knowledge search
 -> Rerank
--> Context Packing
--> Answer Generation
--> Answer + Citations
+-> Context packing
+-> Answer generation
+-> Answer with citations
 ```
 
-### 检索链路
+The default model setup is DashScope-compatible:
 
-当前链路是：
+- embedding: `text-embedding-async-v1`
+- vector store: `Milvus`
+- rerank: `qwen3-rerank`
+- generation: `qwen3.5-flash`
 
-- `embedding`: `text-embedding-async-v1`
-- `vector store`: `Milvus`
-- `rerank`: `qwen3-rerank`
-- `generation`: `qwen3.5-flash`
+The Ask runtime supports both grounded enterprise answers and general LLM answers. Enterprise knowledge questions are answered from retrieved evidence with citations. General questions can fall back to the model without pretending to be based on internal documents.
 
-### 回答模式
+## Context Model
 
-Ask 当前支持两类回答模式：
+Context is split into three parts:
 
-#### 1. Grounded RAG
+- **Conversation memory**: recent natural language turns for short-term continuity.
+- **Working context**: current task state, such as candidate, job description, target group, previous conclusion, and retrieval mode.
+- **Pending action draft**: structured action preview data, including target, content, risk level, and execution parameters.
 
-适用于企业私有知识问题，例如：
+This keeps tool execution state separate from natural language history and makes interrupted workflows easier to resume.
 
-- 报销额度
-- 审批流程
-- HR 制度
-- 项目内部文档内容
-
-特点：
-
-- 先检索，再 rerank，再回答
-- 返回 `answer + citations`
-- 证据不足时拒答或明确说明证据不足
-
-#### 2. General LLM
-
-适用于一般常识问题，例如：
-
-- 多模态是什么
-- Agent 是什么
-- RAG 和 fine-tuning 的区别
-
-特点：
-
-- 不依赖企业知识库
-- 不冒充企业内部知识结论
-
-### 为什么这样做
-
-这样拆的意义是：
-
-- 企业知识问题尽量低幻觉
-- 常识问题也能正常回答
-- 不会把“企业制度”和“模型常识”混成一类答案
-
----
-
-## 上下文管理
-
-这个项目没有把上下文简单理解成“把所有历史消息继续喂给模型”。
-我把上下文拆成了 3 层：
-
-### 1. Conversation Memory
-
-最近几轮自然语言对话。
-
-作用：
-
-- 连续追问
-- 保持短期对话连贯
-
-### 2. Working Context
-
-当前工作状态，例如：
-
-- 当前候选人
-- 当前岗位 / JD
-- 上一轮可分享结论
-- 当前目标群 / 联系人
-- 当前检索模式
-
-作用：
-
-- 支撑 Ask 的多轮工作流
-- 避免所有逻辑都靠 prompt 回忆
-
-### 3. Pending Action Draft
-
-当前待确认动作草案，例如：
-
-- 目标对象
-- 消息正文
-- 会议时间
-- 风险级别
-
-作用：
-
-- 让 `preview -> confirm -> execute` 成为结构化链路
-- 防止线程中断时动作状态丢失
-
-### 设计价值
-
-这种拆法的价值是：
-
-- 不会把历史消息无上限塞进 prompt
-- 不会把知识状态和动作状态混在一起
-- 更适合做企业级 Ask Runtime，而不是普通 Chat UI
-
----
-
-## Agent 执行模型
-
-项目里的 Agent 重点不在“全自动”，而在 **可控执行**。
-
-核心链路：
+## Agent Execution Model
 
 ```text
-Intent Router
--> Action Planner
--> Target Resolver
--> Preview Card
--> Confirm / Cancel
--> Tool Execute
--> Result / Trace
+Intent router
+-> Action planner
+-> Target resolver
+-> Preview card
+-> Confirm or cancel
+-> Tool execute
+-> Result and trace
 ```
 
-### 为什么不直接执行
+The prototype deliberately favors controlled execution over full automation. Enterprise actions such as sending group messages, creating meetings, or sharing content should be reviewed before they are executed.
 
-企业内部动作天然带风险，例如：
+<a id="demo-scenarios"></a>
 
-- 发群消息
-- 发联系人消息
-- 创建会议
-- 共享文档
+## Demo Scenarios
 
-如果模型直接执行，容易出现：
+### 1. Grounded RAG
 
-- 目标解析错误
-- 正文串位
-- 上下文误解
-- 错误消息被发出去
-
-因此当前系统统一采用：
-
-- `preview`
-- `confirm`
-- `execute`
-
-这使它更接近企业真正需要的 Agent，而不是黑盒自动化。
-
----
-
-## 工具与集成
-
-### Milvus
-
-知识检索已真实接入 Milvus。当前 `/knowledge` 页面可以直接看到索引状态，验证不是 fallback 检索，而是：
-
-- `backend_mode = sdk`
-
-### MinerU
-
-PDF 解析通过 MinerU 接入。当前支持：
-
-- 有效 PDF 真实解析入库
-- 无效 PDF 快速失败
-- Windows 文件名边界修复
-
-### Feishu
-
-当前重点接通的是企业内部协同：
-
-- 群消息
-- 日程邀请
-- 绑定状态与权限检查
-
-当前明确保留边界：
-
-- 外部联系人
-- 外部群
-- 高风险自动执行
-
-这样做是有意为之：先把内部稳定能力做通。
-
----
-
-<a id="demo"></a>
-
-## Demo 场景
-
-### Demo 1: Grounded RAG
-
-在 `/ask` 输入：
+Ask:
 
 ```text
 报销标准额度是多少
 ```
 
-继续追问：
+Then ask:
 
 ```text
 超过3000元怎么办
 ```
 
-展示点：
+This demonstrates retrieval, reranking, grounded answer generation, citations, and follow-up context.
 
-- search -> rerank -> answer -> citations
+![Grounded RAG answer](./images/demo/1.png)
 
-- grounded 模式
+![Grounded RAG follow-up](./images/demo/2.png)
 
-- 连续追问
+### 2. Context Reuse and Group Messaging
 
-  ![Demo 1-1](./images/demo/1.png)
-
-  ![Demo 1-2](./images/demo/2.png)
-
-### Demo 2: Context Reuse + Group Messaging
-
-先输入：
+Ask:
 
 ```text
 报销标准额度是多少
 ```
 
-再输入：
+Then ask:
 
 ```text
 把刚才的结论发到 Ai应用开发群
 ```
 
-展示点：
+This demonstrates working-context reuse and the `preview -> confirm -> execute` action flow.
 
-- working context
+![Context reuse](./images/demo/3.png)
 
-- preview / confirm / execute
+![Message preview](./images/demo/4.png)
 
-- Feishu 内部群消息
+![Execution result](./images/demo/5.png)
 
-  ![Demo 2-1](./images/demo/3.png)
+### 3. Dialog-driven Coordination
 
-  ![Demo 2-2](./images/demo/4.png)
-
-  ![Demo 2-3](./images/demo/5.png)
-
-### Demo 3: Dialog-driven Coordination
-
-输入：
+Ask:
 
 ```text
 下午五点在 Ai应用开发群开会！
 ```
 
-展示点：
+This demonstrates action parsing, target resolution, preview confirmation, and calendar-style coordination.
 
-- 通用动作解析
+![Meeting preview](./images/demo/6.png)
 
-- 目标解析
+![Meeting result](./images/demo/7.png)
 
-- 预览确认
+<a id="tech-stack"></a>
 
-- 日程执行
-
-  ![Demo 3-1](./images/demo/6.png)
-
-  ![Demo 3-2](./images/demo/7.png)
-
----
-
-<a id="stack"></a>
-
-## 技术栈
+## Tech Stack
 
 ### Backend
 
@@ -423,12 +194,14 @@ PDF 解析通过 MinerU 接入。当前支持：
 - SQLite / PostgreSQL snapshot persistence
 - Milvus
 - MinerU
-- `lark-cli`
+- lark-cli
+- Temporal workflow components
 
 ### Frontend
 
-- Next.js
-- View Model / API Adapter 模式
+- Next.js 15
+- React 19
+- API adapter and view-model style frontend modules
 
 ### Models
 
@@ -437,95 +210,103 @@ PDF 解析通过 MinerU 接入。当前支持：
 - `qwen3-rerank`
 - `qwen3.5-flash`
 
----
+<a id="repository-layout"></a>
 
-## 仓库结构
+## Repository Layout
 
 ```text
 .
 ├─ backend/
 │  ├─ app/
+│  │  ├─ ask/
+│  │  ├─ integrations/
+│  │  └─ knowledge/
+│  ├─ scripts/
 │  └─ tests/
 ├─ frontend/
 │  ├─ app/
 │  ├─ components/
 │  ├─ lib/
 │  └─ tests/
+├─ images/demo/
 ├─ infra/
 ├─ scripts/
 ├─ docker-compose.yml
+├─ docker-compose.demo.yml
+├─ docker-compose.prod.yml
 ├─ .env.example
 └─ README.md
 ```
 
----
+<a id="quick-start"></a>
 
-<a id="dev"></a>
+## Quick Start
 
-## 本地开发
+### Prerequisites
 
-### Option A: Local App + Docker Middleware
+- Python 3.10+
+- Node.js 20+
+- Docker Desktop
+- Git
 
-适合调试和开发：
+### 1. Configure environment
 
-1. 启动 Docker Desktop
-2. 只启动中间件
-3. 本地启动后端
-4. 本地启动前端
+```powershell
+Copy-Item .env.example .env
+```
 
-中间件：
+Edit `.env` and provide the model, embedding, rerank, Milvus, and Feishu values you actually use. Do not commit `.env`.
+
+### 2. Start middleware with Docker
 
 ```powershell
 docker compose up -d postgres redis temporal temporal-ui etcd minio milvus
 ```
 
-后端：
+### 3. Start backend locally
 
 ```powershell
-cd D:\code\Codex\EMATA-Runtime-main\EMATA-Runtime-main\backend
+cd backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt -r requirements-dev.txt
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-前端：
+### 4. Start frontend locally
 
 ```powershell
-cd D:\code\Codex\EMATA-Runtime-main\EMATA-Runtime-main\frontend
+cd frontend
+npm install
 npm run dev
 ```
 
-关闭前后端：
-
-```powershell
-Stop-Process -Id (Get-NetTCPConnection -LocalPort 3000).OwningProcess -Force
-Stop-Process -Id (Get-NetTCPConnection -LocalPort 8000).OwningProcess -Force
-```
-
-### Option B: Full Docker
-
-```powershell
-docker compose up --build
-```
-
-Full Docker 默认不安装 MinerU runtime，避免首次启动下载大体积 PDF 解析模型。需要在容器内启用 PDF/MinerU 解析时，先在 `.env` 设置：
-
-```powershell
-EMATA_INSTALL_MINERU_RUNTIME=true
-```
-
-默认入口：
+Default local entrypoints:
 
 - API: [http://127.0.0.1:8000](http://127.0.0.1:8000)
 - Ask: [http://127.0.0.1:3000/ask](http://127.0.0.1:3000/ask)
 - Knowledge: [http://127.0.0.1:3000/knowledge](http://127.0.0.1:3000/knowledge)
 - Temporal UI: [http://127.0.0.1:8088](http://127.0.0.1:8088)
 
----
+### Full Docker
 
-## 关键环境变量
+```powershell
+docker compose up --build
+```
 
-See [`.env.example`](./.env.example).
+Full Docker mode does not install the MinerU runtime by default because the PDF parsing runtime can be large. To enable it in container startup, set this in `.env`:
 
-### Model / RAG
+```powershell
+EMATA_INSTALL_MINERU_RUNTIME=true
+```
+
+<a id="environment-variables"></a>
+
+## Environment Variables
+
+Use `.env.example` as the template.
+
+### Model and RAG
 
 - `EMATA_MODEL_BASE_URL`
 - `EMATA_MODEL_API_KEY`
@@ -546,61 +327,94 @@ See [`.env.example`](./.env.example).
 - `EMATA_MINERU_EXECUTABLE`
 - `EMATA_INSTALL_MINERU_RUNTIME`
 
-### Feishu飞书
+### Feishu
 
 - `EMATA_FEISHU_APP_ID`
 - `EMATA_FEISHU_APP_SECRET`
 - `EMATA_DEFAULT_INTERNAL_CHAT_QUERY`
 
----
+### Frontend
 
-## 当前边界
+- `NEXT_PUBLIC_API_BASE_URL`
 
-当前项目最适合展示的是：
+<a id="testing"></a>
 
-- 企业知识问答
-- Milvus + Rerank + Answer Generation
-- 多轮上下文管理
-- 可控 Agent 执行链
-- 内部群消息与日程
+## Testing
 
-以下未完成：
+Backend:
 
-- 外部联系人自动私聊
-- 外部群复杂协同
-- 高风险动作全自动执行
-- 完整生产级权限治理
+```powershell
+cd backend
+python -m pytest
+```
 
-因飞书权限边界与系统安全考虑的系统边界设计。
+Frontend:
 
----
+```powershell
+cd frontend
+npm test
+```
 
-## 为什么适合作为面试项目
+Build check:
 
-这个项目的价值在于：
+```powershell
+cd frontend
+npm run build
+```
 
-- 把 **RAG、Context、Agent、Tool Use** 做成了统一运行时
-- 模块之间有边界，而不是把所有逻辑塞进一个页面或一个 prompt
-- 既能展示系统设计，也能展示真实集成和工程落地
+<a id="security-notes"></a>
 
-如果要一句话概括：
+## Security Notes
 
-> EMATA Runtime 是一个企业内部 Ask Runtime，把知识问答、上下文管理和可控工具执行统一到同一套模块化架构里。
+This project is public, so keep secrets out of Git:
 
----
+- never commit `.env`
+- never commit API keys, Feishu secrets, database passwords, or provider tokens
+- use `.env.example`, `.env.demo.example`, and `.env.production.example` for placeholders only
+- rotate any credential that was ever committed or pasted into a public place
+- keep runtime files, uploads, caches, and generated databases outside tracked files
 
-## 路线图
+The repository already ignores local runtime directories such as `.venv/`, `.runtime/`, `.pytest_cache/`, `.next/`, `node_modules/`, `tmp/`, and `.env`.
 
-- 更强的 Intent Router
-- 更通用的 Action Planner
-- 更稳定的 Target Resolver
-- Async execution + SSE
-- 更完整的 trace / observability
-- 更多企业工具与 Skill 扩展
+<a id="current-limits"></a>
 
----
+## Current Limits
 
-## 许可证
+The prototype is best suited for showing:
 
-当前仓库未附带开源许可证。
-如需对外长期公开，建议补充 License，并在公开前再次确认本地敏感配置和运行时文件未被提交。
+- enterprise knowledge Q&A
+- Milvus retrieval with rerank and answer generation
+- multi-turn working context
+- controlled agent execution
+- internal group messaging and scheduling-style coordination
+
+Known boundaries:
+
+- external contacts and external group workflows are not the focus yet
+- high-risk actions are not executed automatically
+- production-grade authorization and audit governance are still incomplete
+- provider credentials and enterprise tenant setup are environment-specific
+
+## Why This Project Matters
+
+The project demonstrates how RAG, context management, agent planning, and tool use can be combined into one runtime instead of being scattered across prompts and page-level code. The engineering value is in the runtime boundaries, retrieval traceability, state model, and controlled execution policy.
+
+In one sentence:
+
+> EMATA Runtime is an enterprise Ask Runtime that unifies grounded knowledge Q&A, structured context, and controlled tool execution in a modular system.
+
+<a id="roadmap"></a>
+
+## Roadmap
+
+- stronger intent routing
+- more general action planning
+- more robust target resolution
+- richer async execution and progress traces
+- better observability for retrieval and tool calls
+- more enterprise skill modules
+- fuller authorization, audit, and policy controls
+
+## License
+
+No open-source license has been added yet. If this repository is intended for long-term public use, add an explicit license and re-check the repository for sensitive data before publishing new releases.
