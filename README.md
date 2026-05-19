@@ -167,8 +167,6 @@ This demonstrates working-context reuse and the `preview -> confirm -> execute` 
 
 ![Message preview](./images/demo/4.png)
 
-![Execution result](./images/demo/5.png)
-
 ### 3. Dialog-driven Coordination
 
 Ask:
